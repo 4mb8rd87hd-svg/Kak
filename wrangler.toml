@@ -2,6 +2,10 @@ name = "kak-po-maslu-api"
 main = "worker/index.js"
 compatibility_date = "2025-01-01"
 
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 [triggers]
 crons = ["* * * * *"]
 

@@ -149,26 +149,46 @@ async function telegramWebhookSecret(botToken) {
   const input = new TextEncoder().encode("kak-po-maslu-webhook-v1:" + botToken);
   return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", input)));
 }
+async function telegramTokenFingerprint(botToken) {
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(botToken))));
+}
 async function ensureTelegramWebhook(env) {
-  if (!env.BOT_TOKEN) return;
+  if (!env.BOT_TOKEN) {
+    console.error("Telegram webhook setup skipped: BOT_TOKEN secret is missing.");
+    return;
+  }
   const info = await callTelegram("getWebhookInfo", env.BOT_TOKEN);
-  if (info.url === TELEGRAM_WEBHOOK_URL) return;
-  if (info.url) {
+  if (info.url && info.url !== TELEGRAM_WEBHOOK_URL) {
     console.warn("Telegram already has a different webhook; leaving it unchanged.");
     return;
   }
+
+  const tokenFingerprint = await telegramTokenFingerprint(env.BOT_TOKEN);
+  const savedFingerprint = await env.CATALOG.get("telegram_webhook_token_fingerprint");
+  if (info.url === TELEGRAM_WEBHOOK_URL && savedFingerprint === tokenFingerprint) {
+    console.log("Telegram webhook check passed.");
+    return;
+  }
+
   await callTelegram("setWebhook", env.BOT_TOKEN, {
     url: TELEGRAM_WEBHOOK_URL,
     secret_token: await telegramWebhookSecret(env.BOT_TOKEN),
     allowed_updates: ["message"]
   });
-  console.log("Telegram webhook configured for the store.");
+  await env.CATALOG.put("telegram_webhook_token_fingerprint", tokenFingerprint);
+  console.log(info.url === TELEGRAM_WEBHOOK_URL ? "Telegram webhook secret refreshed for the store." : "Telegram webhook configured for the store.");
 }
 async function handleTelegramWebhook(request, env) {
-  if (!env.BOT_TOKEN) return textError("Telegram bot is not configured.", 503);
+  if (!env.BOT_TOKEN) {
+    console.error("Telegram webhook request rejected: BOT_TOKEN secret is missing.");
+    return textError("Telegram bot is not configured.", 503);
+  }
   const expectedSecret = await telegramWebhookSecret(env.BOT_TOKEN);
   const receivedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
-  if (!constantTimeEqual(receivedSecret, expectedSecret)) return textError("Invalid webhook signature.", 403);
+  if (!constantTimeEqual(receivedSecret, expectedSecret)) {
+    console.error("Telegram webhook request rejected: invalid secret token.");
+    return textError("Invalid webhook signature.", 403);
+  }
 
   let update;
   try { update = await request.json(); }
@@ -176,6 +196,7 @@ async function handleTelegramWebhook(request, env) {
   const message = update && update.message;
   const text = message && typeof message.text === "string" ? message.text : "";
   if (message && message.chat && message.chat.type === "private" && /^\/start(?:@\w+)?(?:\s|$)/i.test(text)) {
+    console.log("Telegram /start received; sending the Mini App button.");
     await callTelegram("sendMessage", env.BOT_TOKEN, {
       chat_id: message.chat.id,
       text: "Добро пожаловать! Нажмите кнопку ниже, чтобы открыть магазин «Как по маслу!».",
@@ -183,6 +204,7 @@ async function handleTelegramWebhook(request, env) {
         inline_keyboard: [[{ text: "Открыть магазин", web_app: { url: MINI_APP_URL } }]]
       }
     });
+    console.log("Telegram /start reply sent.");
   }
   return json({ ok: true });
 }
