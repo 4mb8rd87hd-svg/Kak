@@ -1,5 +1,5 @@
 /* Set this to the deployed Cloudflare Worker URL before publishing the live mini app. */
-const API_BASE_URL = "";
+const API_BASE_URL = "https://kak-po-maslu-api.4mb8rd87hd.workers.dev";
 const STORE_KEY = "kak-po-maslu-store-v1";
 const CART_KEY = "kak-po-maslu-cart-v1";
 const FAVORITES_KEY = "kak-po-maslu-favorites-v1";
