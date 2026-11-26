@@ -1,0 +1,1 @@
+Cloudflare Worker backend. Configure KV binding `CATALOG` in `wrangler.toml`, add secrets `BOT_TOKEN` and `ADMIN_TELEGRAM_ID`, then deploy with Wrangler from the repository root. See the root README for the full setup.
