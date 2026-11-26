@@ -14,28 +14,20 @@
 
 ## 1. Опубликовать витрину на GitHub Pages
 
-1. Загрузите файлы проекта в GitHub-репозиторий. Для GitHub Pages на бесплатном тарифе репозиторий должен быть публичным; секретов в нём нет — токен хранится только в Cloudflare.
-2. Откройте **Settings → Pages**.
-3. В **Build and deployment** выберите **Deploy from a branch**, ветку `main` и папку `/ (root)`, затем сохраните.
-4. Дождитесь адреса сайта вида `https://ВАШ-АККАУНТ.github.io/ИМЯ-РЕПОЗИТОРИЯ/`.
+1. Репозиторий GitHub должен быть публичным; токен Telegram-бота нельзя хранить в нём или в `app.js`.
+2. Откройте **Settings → Pages** и выберите **GitHub Actions** как источник публикации.
+3. Workflow из `.github/workflows/pages.yml` автоматически публикует файлы сайта после каждого push в ветку `main`.
+4. Адрес сайта: `https://4mb8rd87hd-svg.github.io/Kak/`.
 
-GitHub Pages хостит только витрину. Токен Telegram-бота нельзя класть в этот репозиторий или в `app.js`.
+## 2. Развернуть API на Cloudflare
 
-## 2. Создать бесплатный API на Cloudflare
+1. В Cloudflare откройте Worker `kak-po-maslu-api` → **Settings → Builds** и подключите репозиторий `4mb8rd87hd-svg/Kak`, ветку `main`.
+2. Для сборки оставьте **Build command** пустой, а в **Deploy command** укажите `npx wrangler deploy`. Корневая папка — корень репозитория, где лежит `wrangler.toml`.
+3. Добавьте в **Settings → Variables and Secrets** секреты `BOT_TOKEN` и `ADMIN_TELEGRAM_ID`. Токен получен у @BotFather; `ADMIN_TELEGRAM_ID` — числовой Telegram ID владельца, не `@username`.
+4. После первого подключения GitHub Cloudflare запускает сборку только после нового push в выбранную ветку. Последующие push в `main` разворачиваются автоматически.
+5. Worker использует KV-хранилище с binding `CATALOG`, заданным в `wrangler.toml`.
 
-1. Создайте бесплатный аккаунт Cloudflare и установите Wrangler на компьютере с Node.js: `npm install -g wrangler`.
-2. Войдите: `wrangler login`.
-3. В корне проекта создайте KV-хранилище: `wrangler kv namespace create CATALOG`.
-4. Скопируйте выданный `id` в `wrangler.toml` вместо `REPLACE_WITH_YOUR_KV_NAMESPACE_ID`.
-5. Создайте Telegram-бота у [@BotFather](https://t.me/BotFather). Узнайте числовой Telegram ID владельца (например, через бота `@userinfobot`). Это ID, не `@username`.
-6. В корне проекта задайте секреты Worker:
-   - `wrangler secret put BOT_TOKEN` — введите токен, полученный у @BotFather.
-   - `wrangler secret put ADMIN_TELEGRAM_ID` — введите числовой Telegram ID владельца.
-   Значения вводятся в запрос Wrangler и не добавляются в файлы или GitHub.
-7. Опубликуйте Worker командой `wrangler deploy`. Сохраните адрес вида `https://kak-po-maslu-api.ВАШ-АККАУНТ.workers.dev`.
-8. В `app.js` замените пустое значение `API_BASE_URL` на адрес Worker, без завершающего `/`, и снова отправьте изменения в GitHub.
-
-У бесплатного Cloudflare Workers есть лимиты запросов и KV-записей. Для небольшого локального магазина обычно достаточно; актуальные лимиты зависят от тарифов Cloudflare.
+Проверка API: откройте `https://kak-po-maslu-api.4mb8rd87hd.workers.dev/api/health` — ожидаемый ответ `{"ok":true}`. У бесплатного Cloudflare Workers есть лимиты запросов и KV-записей.
 
 ## 3. Подключить мини-приложение к Telegram
 
