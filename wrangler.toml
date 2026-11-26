@@ -2,5 +2,8 @@ name = "kak-po-maslu-api"
 main = "worker/index.js"
 compatibility_date = "2025-01-01"
 
+[triggers]
+crons = ["* * * * *"]
+
 [[kv_namespaces]]
 binding = "CATALOG"

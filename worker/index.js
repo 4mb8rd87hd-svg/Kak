@@ -6,6 +6,8 @@ const CORS_HEADERS = {
 };
 const MAX_IMAGE_CHARS = 950000;
 const DEFAULT_CATEGORIES = ["Полуфабрикаты", "Мясное", "Рыба", "Молочное", "Другое"];
+const MINI_APP_URL = "https://4mb8rd87hd-svg.github.io/Kak/";
+const TELEGRAM_WEBHOOK_URL = "https://kak-po-maslu-api.4mb8rd87hd.workers.dev/telegram/webhook";
 
 function json(body, status) {
   return new Response(JSON.stringify(body), { status: status || 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, CORS_HEADERS) });
@@ -132,11 +134,70 @@ async function sendOrderToTelegram(order, user, env) {
   if (!response.ok || !result.ok) throw new Error("Не удалось доставить сообщение боту.");
 }
 
+async function callTelegram(method, botToken, payload) {
+  const options = payload ? {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  } : { method: "GET" };
+  const response = await fetch("https://api.telegram.org/bot" + botToken + "/" + method, options);
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.description || "Ошибка запроса к Telegram Bot API.");
+  return result.result;
+}
+async function telegramWebhookSecret(botToken) {
+  const input = new TextEncoder().encode("kak-po-maslu-webhook-v1:" + botToken);
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", input)));
+}
+async function ensureTelegramWebhook(env) {
+  if (!env.BOT_TOKEN) return;
+  const info = await callTelegram("getWebhookInfo", env.BOT_TOKEN);
+  if (info.url === TELEGRAM_WEBHOOK_URL) return;
+  if (info.url) {
+    console.warn("Telegram already has a different webhook; leaving it unchanged.");
+    return;
+  }
+  await callTelegram("setWebhook", env.BOT_TOKEN, {
+    url: TELEGRAM_WEBHOOK_URL,
+    secret_token: await telegramWebhookSecret(env.BOT_TOKEN),
+    allowed_updates: ["message"]
+  });
+  console.log("Telegram webhook configured for the store.");
+}
+async function handleTelegramWebhook(request, env) {
+  if (!env.BOT_TOKEN) return textError("Telegram bot is not configured.", 503);
+  const expectedSecret = await telegramWebhookSecret(env.BOT_TOKEN);
+  const receivedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
+  if (!constantTimeEqual(receivedSecret, expectedSecret)) return textError("Invalid webhook signature.", 403);
+
+  let update;
+  try { update = await request.json(); }
+  catch (_) { return textError("Invalid Telegram update.", 400); }
+  const message = update && update.message;
+  const text = message && typeof message.text === "string" ? message.text : "";
+  if (message && message.chat && message.chat.type === "private" && /^\/start(?:@\w+)?(?:\s|$)/i.test(text)) {
+    await callTelegram("sendMessage", env.BOT_TOKEN, {
+      chat_id: message.chat.id,
+      text: "Добро пожаловать! Нажмите кнопку ниже, чтобы открыть магазин «Как по маслу!».",
+      reply_markup: {
+        inline_keyboard: [[{ text: "Открыть магазин", web_app: { url: MINI_APP_URL } }]]
+      }
+    });
+  }
+  return json({ ok: true });
+}
+
 export default {
+  async scheduled(_controller, env) {
+    try { await ensureTelegramWebhook(env); }
+    catch (error) { console.error("Could not configure Telegram webhook:", error.message); }
+  },
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
     const url = new URL(request.url);
+    if (url.pathname === "/telegram/webhook" && request.method === "POST") return handleTelegramWebhook(request, env);
     if (url.pathname === "/api/health" && request.method === "GET") return json({ ok: true });
+    if (url.pathname === "/api/admin/access" && request.method === "GET") return json({ isAdmin: await requireAdmin(request, env) });
     if (url.pathname === "/api/products" && request.method === "GET") {
       try { return json({ products: await productsFromStore(env) }); }
       catch (_) { return textError("Каталог временно недоступен.", 500); }

@@ -28,6 +28,7 @@ let cart = readStorage(CART_KEY, {});
 let favorites = readStorage(FAVORITES_KEY, []);
 let activePage = "home";
 let activeAdminTab = "products";
+let canManageStore = false;
 let activeCategory = "Все";
 let searchTerm = "";
 let editingPhoto = "";
@@ -353,6 +354,7 @@ async function togglePromotion(id, enabled) {
   } catch (error) { showToast(error.message || "Не удалось изменить акции"); }
 }
 function navigate(page) {
+  if (page === "admin" && !canManageStore) { showToast("Админ-панель доступна только владельцу магазина"); return; }
   activePage = page;
   document.querySelectorAll(".page").forEach(function (element) { element.hidden = element.id !== page + "Page"; });
   document.querySelectorAll(".nav-item").forEach(function (element) { element.classList.toggle("active", element.dataset.page === page); });
@@ -465,6 +467,20 @@ async function saveBulkProductsFromForm(form) {
   }
 }
 function isAdminInitDataPresent() { return !!(telegram && telegram.initData); }
+async function refreshAdminAccess() {
+  const adminEntry = document.querySelector(".admin-entry");
+  if (!adminEntry) return;
+  adminEntry.hidden = true;
+  canManageStore = false;
+  if (!telegram || !telegram.initData || isDemoMode()) return;
+  try {
+    const result = await apiRequest("/api/admin/access");
+    canManageStore = result.isAdmin === true;
+    adminEntry.hidden = !canManageStore;
+  } catch (_) {
+    adminEntry.hidden = true;
+  }
+}
 async function saveProductFromForm(form) {
   const data = new FormData(form);
   const oldId = data.get("id");
@@ -621,4 +637,5 @@ document.addEventListener("keydown", function (event) { if (event.key === "Escap
 
 if (isDemoMode()) document.getElementById("demoNote").hidden = false;
 setTelegramProfile();
+refreshAdminAccess();
 loadProducts();
